@@ -5,7 +5,7 @@ description = "Model Context Protocol server for CATIA V5/V6 automation via COM"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
-authors = [{name = "Developer", email = "dev@example.com"}]
+authors = [{name = "田晓潼", email = "dev@example.com"}]
 dependencies = [
     "mcp>=1.27.0",
     "pywin32>=306",

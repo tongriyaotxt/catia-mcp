@@ -1,5 +1,7 @@
 # CATIA MCP Server
 
+> 作者：**田晓潼**
+
 Model Context Protocol (MCP) server for Dassault Systèmes **CATIA V5** (and V6 via compatible COM interfaces) automation on Windows.
 
 It exposes almost every common CATIA operation—document management, 2D sketcher, 3D Part Design, Assembly, Drafting, Parameters & Formulas, Measurement/Analysis, and Export/View control—as strongly-typed MCP tools. Any MCP-compatible client (Claude Code, Claude Desktop, Continue, etc.) can drive CATIA without writing custom glue code.

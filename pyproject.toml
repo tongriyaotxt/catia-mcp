@@ -1,0 +1,26 @@
+[project]
+name = "catia-mcp"
+version = "0.1.0"
+description = "Model Context Protocol server for CATIA V5/V6 automation via COM"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [{name = "Developer", email = "dev@example.com"}]
+dependencies = [
+    "mcp>=1.27.0",
+    "pywin32>=306",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "ruff",
+]
+
+[project.scripts]
+catia-mcp = "catia_mcp.__main__:main"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM"]
+ignore = ["E501"]

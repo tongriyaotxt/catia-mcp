@@ -62,8 +62,22 @@ def create_sketch_on_plane(plane_name: str = "xy") -> dict[str, Any]:
         raise ValueError(f"Unknown plane: {plane_name}")
 
     body = _get_main_body(part)
+    # Ensure a unique sketch name: a second sketch on the same plane must not
+    # collide with an existing one, otherwise name-based lookup
+    # (_get_sketch / sketches.item(name)) would silently resolve to the
+    # FIRST sketch and draw into / extrude the wrong profile.
+    base = f"Sketch_{plane_name.upper()}"
+    existing = {body.sketches.item(i).name for i in range(1, body.sketches.count + 1)}
+    name = base
+    n = 2
+    while name in existing:
+        name = f"{base}_{n}"
+        n += 1
     sketch = body.sketches.add(plane_map[key])
-    sketch.name = f"Sketch_{plane_name.upper()}"
+    try:
+        sketch.name = name
+    except Exception:
+        pass  # keep CATIA-generated (unique) name
     return {"sketch_name": sketch.name, "plane": plane_name.upper(), "is_open": True}
 
 

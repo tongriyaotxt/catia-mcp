@@ -11,6 +11,7 @@ from typing import Any
 from pycatia.part_interfaces.shape_factory import ShapeFactory
 
 from catia_mcp.connection import _get_pycatia_part_doc
+from catia_mcp.tools.part_design import _ensure_body_in_work
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,7 @@ def create_boolean_add(source_body_name: str, target_body_name: str | None = Non
         )
 
     sf = ShapeFactory(part.shape_factory.com_object)
+    _ensure_body_in_work(part)
     sf.add_new_add(source)
     part.update()
     return {"operation": "BooleanAdd", "source": source_body_name, "target": target.name}
@@ -99,6 +101,7 @@ def create_boolean_remove(source_body_name: str, target_body_name: str | None = 
         )
 
     sf = ShapeFactory(part.shape_factory.com_object)
+    _ensure_body_in_work(part)
     sf.add_new_remove(source)
     part.update()
     return {"operation": "BooleanRemove", "source": source_body_name, "target": target.name}
@@ -118,6 +121,7 @@ def create_boolean_intersect(source_body_name: str, target_body_name: str | None
         )
 
     sf = ShapeFactory(part.shape_factory.com_object)
+    _ensure_body_in_work(part)
     sf.add_new_intersect(source)
     part.update()
     return {"operation": "BooleanIntersect", "source": source_body_name, "target": target.name}
@@ -146,6 +150,7 @@ def create_shell(
     ref = _try_get_face_ref(part, feature_name, face_index)
 
     sf = ShapeFactory(part.shape_factory.com_object)
+    _ensure_body_in_work(part)
     shell = sf.add_new_shell(ref, float(internal_thickness), float(external_thickness))
     part.update()
     return {"feature": "Shell", "name": shell.name, "internal": internal_thickness, "external": external_thickness}
@@ -175,15 +180,12 @@ def create_draft(
     dir_vec = direction or [0.0, 0.0, 1.0]
 
     sf = ShapeFactory(part.shape_factory.com_object)
+    _ensure_body_in_work(part)
     draft = sf.add_new_draft(
         ref_face, ref_neutral, 0, ref_parting,
         float(dir_vec[0]), float(dir_vec[1]), float(dir_vec[2]),
+        0, float(angle), 0,  # mode, angle, multiselection mode
     )
-    # Set draft angle if possible via raw COM
-    try:
-        draft.com_object.Angle.Value = float(angle)
-    except Exception:
-        pass
 
     part.update()
     return {"feature": "Draft", "name": draft.name, "angle": angle}
@@ -200,6 +202,7 @@ def create_thickness(
     ref = _try_get_face_ref(part, feature_name, face_index)
 
     sf = ShapeFactory(part.shape_factory.com_object)
+    _ensure_body_in_work(part)
     thickness = sf.add_new_thickness(ref, float(offset))
     part.update()
     return {"feature": "Thickness", "name": thickness.name, "offset": offset}
@@ -232,6 +235,7 @@ def create_close_surface(surface_name: str) -> dict[str, Any]:
         raise RuntimeError(f"Surface '{surface_name}' not found.")
 
     sf = ShapeFactory(part.shape_factory.com_object)
+    _ensure_body_in_work(part)
     close_surf = sf.add_new_close_surface(ref)
     part.update()
     return {"feature": "CloseSurface", "name": close_surf.name}
@@ -260,6 +264,7 @@ def create_sew_surface(surface_name: str, sewing_side: int = 1) -> dict[str, Any
         raise RuntimeError(f"Surface '{surface_name}' not found.")
 
     sf = ShapeFactory(part.shape_factory.com_object)
+    _ensure_body_in_work(part)
     sew = sf.add_new_sew_surface(ref, int(sewing_side))
     part.update()
     return {"feature": "SewSurface", "name": sew.name}
@@ -302,6 +307,7 @@ def create_split(
         raise RuntimeError(f"Splitting element '{splitting_element_name}' not found.")
 
     sf = ShapeFactory(part.shape_factory.com_object)
+    _ensure_body_in_work(part)
     split = sf.add_new_split(ref, int(split_side))
     part.update()
     return {"feature": "Split", "name": split.name}
@@ -337,6 +343,7 @@ def create_thick_surface(
         raise RuntimeError(f"Surface '{surface_name}' not found.")
 
     sf = ShapeFactory(part.shape_factory.com_object)
+    _ensure_body_in_work(part)
     thick = sf.add_new_thick_surface(ref, int(offset_direction), float(top_offset), float(bottom_offset))
     part.update()
     return {"feature": "ThickSurface", "name": thick.name}
@@ -354,10 +361,12 @@ def create_remove_face(
     """
     part_doc = _get_pycatia_part_doc()
     part = part_doc.part
-    ref = _try_get_face_ref(part, feature_name, face_index)
+    ref_remove = _try_get_face_ref(part, feature_name, face_index)
+    ref_keep = _try_get_face_ref(part, feature_name, 2 if face_index == 1 else 1)
 
     sf = ShapeFactory(part.shape_factory.com_object)
-    remove = sf.add_new_remove_faces(ref)
+    _ensure_body_in_work(part)
+    remove = sf.add_new_remove_face(ref_keep, ref_remove)
     part.update()
     return {"feature": "RemoveFace", "name": remove.name}
 
@@ -398,6 +407,7 @@ def create_replace_face(
         raise RuntimeError(f"Surface '{surface_name}' not found.")
 
     sf = ShapeFactory(part.shape_factory.com_object)
-    replace = sf.add_new_replace_face(ref_face, ref_surf)
+    _ensure_body_in_work(part)
+    replace = sf.add_new_replace_face(ref_surf, ref_face, 1)
     part.update()
     return {"feature": "ReplaceFace", "name": replace.name}

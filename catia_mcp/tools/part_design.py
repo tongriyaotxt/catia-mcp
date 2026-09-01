@@ -29,6 +29,25 @@ def _get_main_body(part):
     return bodies[0]
 
 
+def _ensure_body_in_work(part):
+    """Make sure the in-work object is a Body before creating part-design
+    features.
+
+    GSD operations (points, curves, ...) leave a geometrical set as the
+    in-work object; part-design features created in that state are silently
+    discarded by CATIA. If the current in-work object is already one of the
+    part's bodies (multi-body workflows), it is left untouched.
+    """
+    try:
+        current = part.in_work_object
+        for i in range(1, part.bodies.count + 1):
+            if part.bodies.item(i).name == current.name:
+                return  # already a body — respect multi-body workflows
+    except Exception:
+        pass
+    part.in_work_object = _get_main_body(part)
+
+
 def _get_sketch(part, sketch_name: str | None = None):
     """Return a sketch by name or the last one."""
     body = _get_main_body(part)
@@ -51,6 +70,7 @@ def create_pad(length: float, sketch_name: str | None = None, reverse: bool = Fa
     sketch = _get_sketch(part, sketch_name)
 
     sf = ShapeFactory(part.shape_factory.com_object)
+    _ensure_body_in_work(part)
     pad = sf.add_new_pad(sketch, float(length))
     if reverse:
         try:
@@ -62,14 +82,25 @@ def create_pad(length: float, sketch_name: str | None = None, reverse: bool = Fa
     return {"feature": "Pad", "length": length, "reverse": reverse, "sketch": sketch.name, "name": pad.name}
 
 
-def create_pocket(length: float, sketch_name: str | None = None) -> dict[str, Any]:
-    """Create a Pocket (cut extrusion) from a sketch profile."""
+def create_pocket(length: float, sketch_name: str | None = None, reverse: bool = False) -> dict[str, Any]:
+    """Create a Pocket (cut extrusion) from a sketch profile.
+
+    CATIA's default pocket direction is opposite the sketch plane normal
+    (i.e. into the material when the sketch lies on an outer face).
+    Set reverse=True to cut the other way.
+    """
     part_doc = _get_pycatia_part_doc()
     part = part_doc.part
     sketch = _get_sketch(part, sketch_name)
 
     sf = ShapeFactory(part.shape_factory.com_object)
+    _ensure_body_in_work(part)
     pocket = sf.add_new_pocket(sketch, float(length))
+    if reverse:
+        try:
+            pocket.direction_orientation = 0
+        except Exception:
+            logger.warning("Pocket reverse direction not applied.")
 
     part.update()
     return {"feature": "Pocket", "length": length, "sketch": sketch.name, "name": pocket.name}
@@ -82,6 +113,7 @@ def create_shaft(angle: float, sketch_name: str | None = None) -> dict[str, Any]
     sketch = _get_sketch(part, sketch_name)
 
     sf = ShapeFactory(part.shape_factory.com_object)
+    _ensure_body_in_work(part)
     shaft = sf.add_new_shaft(sketch)
     try:
         shaft.first_angle.value = float(angle)
@@ -90,6 +122,43 @@ def create_shaft(angle: float, sketch_name: str | None = None) -> dict[str, Any]
 
     part.update()
     return {"feature": "Shaft", "angle": angle, "sketch": sketch.name}
+
+
+def _find_support_face(part_doc, part, point: tuple[float, float, float]):
+    """Best-effort: find a planar face of the main body containing `point` (mm).
+
+    Selects the body, searches CGM faces, and keeps the first planar face
+    whose plane contains the point. Returns a pycatia Reference or None.
+    """
+    from catia_mcp.tools.measurement import _get_spa_workbench
+
+    body = _get_main_body(part)
+    spa = _get_spa_workbench(part_doc)
+    sel = part_doc.selection
+    px, py, pz = point
+    sel.clear()
+    try:
+        sel.add(body)
+        sel.search("Topology.CGMFace,sel")
+        for i in range(1, sel.count + 1):
+            fref = sel.item(i).reference
+            measurable = spa.get_measurable(fref)
+            try:
+                plane = measurable.get_plane()
+            except Exception:
+                continue  # not a planar face
+            o, d1, d2 = plane[0:3], plane[3:6], plane[6:9]
+            n = (
+                d1[1] * d2[2] - d1[2] * d2[1],
+                d1[2] * d2[0] - d1[0] * d2[2],
+                d1[0] * d2[1] - d1[1] * d2[0],
+            )
+            dist = abs((px - o[0]) * n[0] + (py - o[1]) * n[1] + (pz - o[2]) * n[2])
+            if dist < 1e-6:
+                return fref
+    finally:
+        sel.clear()
+    return None
 
 
 def create_hole(
@@ -101,26 +170,41 @@ def create_hole(
     direction_x: float = 0.0,
     direction_y: float = 0.0,
     direction_z: float = 1.0,
+    face_name: str | None = None,
 ) -> dict[str, Any]:
-    """Create a Hole feature on the main body."""
+    """Create a Hole feature on the main body.
+
+    The anchor point must lie on a planar face. The support face is located
+    automatically (best-effort) unless `face_name` is given. The hole
+    direction follows the support face normal (CATIA behavior); the
+    direction_* arguments are currently informational only.
+    """
     part_doc = _get_pycatia_part_doc()
     part = part_doc.part
-    body = _get_main_body(part)
 
-    ref = part.create_reference_from_object(body)
+    if face_name:
+        support = part.create_reference_from_name(face_name)
+    else:
+        support = _find_support_face(part_doc, part, (point_x, point_y, point_z))
+        if support is None:
+            raise RuntimeError(
+                "No planar face found containing the anchor point "
+                f"({point_x}, {point_y}, {point_z}). "
+                "Provide face_name explicitly to choose the support face."
+            )
+
     sf = ShapeFactory(part.shape_factory.com_object)
+    _ensure_body_in_work(part)
 
-    # pycatia signature: (i_x, i_y, i_z, i_support, i_depth)
+    # pycatia signature: (i_x, i_y, i_z, i_support_face_ref, i_depth)
     hole = sf.add_new_hole_from_point(
-        float(point_x), float(point_y), float(point_z), ref, float(depth)
+        float(point_x), float(point_y), float(point_z), support, float(depth)
     )
-    try:
-        hole.diameter = float(diameter)
-    except Exception:
-        pass
+    # Hole.diameter is a read-only property returning a Length; set its value
+    hole.diameter.value = float(diameter)
 
     part.update()
-    return {"feature": "Hole", "diameter": diameter, "depth": depth}
+    return {"feature": "Hole", "diameter": diameter, "depth": depth, "name": hole.name}
 
 
 def create_fillet(radius: float, edges: list[int] | None = None) -> dict[str, Any]:
@@ -134,6 +218,7 @@ def create_fillet(radius: float, edges: list[int] | None = None) -> dict[str, An
     part = part_doc.part
     body = _get_main_body(part)
     sf = ShapeFactory(part.shape_factory.com_object)
+    _ensure_body_in_work(part)
 
     edge_ref = _try_get_edge_ref(part, body, edges)
     if edge_ref is not None:
@@ -155,6 +240,7 @@ def create_auto_fillet(fillet_radius: float, round_radius: float = 0.0) -> dict[
     part_doc = _get_pycatia_part_doc()
     part = part_doc.part
     sf = ShapeFactory(part.shape_factory.com_object)
+    _ensure_body_in_work(part)
 
     auto_fillet = sf.add_new_auto_fillet(float(fillet_radius), float(round_radius))
     part.update()
@@ -174,6 +260,7 @@ def create_chamfer(length: float, edges: list[int] | None = None) -> dict[str, A
     part = part_doc.part
     body = _get_main_body(part)
     sf = ShapeFactory(part.shape_factory.com_object)
+    _ensure_body_in_work(part)
 
     edge_ref = _try_get_edge_ref(part, body, edges)
     if edge_ref is None:
@@ -214,10 +301,11 @@ def create_mirror(feature_name: str, plane_name: str = "xy") -> dict[str, Any]:
     part = part_doc.part
     body = _get_main_body(part)
     sf = ShapeFactory(part.shape_factory.com_object)
+    _ensure_body_in_work(part)
 
     plane_map = {
-        "xy": part.origin_elements.plane_yz,
-        "yz": part.origin_elements.plane_xy,
+        "xy": part.origin_elements.plane_xy,
+        "yz": part.origin_elements.plane_yz,
         "zx": part.origin_elements.plane_zx,
     }
     plane = plane_map.get(plane_name.lower())
@@ -252,6 +340,7 @@ def create_pattern(
     part = part_doc.part
     body = _get_main_body(part)
     sf = ShapeFactory(part.shape_factory.com_object)
+    _ensure_body_in_work(part)
 
     feature = None
     for shape in body.shapes:
@@ -291,30 +380,48 @@ def create_pattern(
     }
 
 
-def create_rib(length: float, sketch_name: str | None = None) -> dict[str, Any]:
-    """Create a Rib (sweep with constant thickness) from a profile sketch."""
+def create_rib(sketch_name: str | None = None, center_curve_name: str | None = None) -> dict[str, Any]:
+    """Create a Rib (sweep) from a profile sketch and a center-curve sketch.
+
+    Args:
+        sketch_name: Profile sketch name (last sketch if None).
+        center_curve_name: Center-curve sketch name (required, must differ
+            from the profile).
+    """
     part_doc = _get_pycatia_part_doc()
     part = part_doc.part
-    sketch = _get_sketch(part, sketch_name)
+    profile = _get_sketch(part, sketch_name)
+    center = _get_sketch(part, center_curve_name)
+    if profile.name == center.name:
+        raise RuntimeError("Rib requires distinct profile and center-curve sketches.")
 
     sf = ShapeFactory(part.shape_factory.com_object)
-    ref = part.create_reference_from_object(sketch)
-    rib = sf.add_new_rib(ref)
+    _ensure_body_in_work(part)
+    rib = sf.add_new_rib(profile, center)
     part.update()
-    return {"feature": "Rib", "sketch": sketch.name}
+    return {"feature": "Rib", "profile": profile.name, "center_curve": center.name}
 
 
-def create_slot(length: float, sketch_name: str | None = None) -> dict[str, Any]:
-    """Create a Slot (groove sweep) from a profile sketch."""
+def create_slot(sketch_name: str | None = None, center_curve_name: str | None = None) -> dict[str, Any]:
+    """Create a Slot (groove sweep) from a profile sketch and a center curve.
+
+    Args:
+        sketch_name: Profile sketch name (last sketch if None).
+        center_curve_name: Center-curve sketch name (required, must differ
+            from the profile).
+    """
     part_doc = _get_pycatia_part_doc()
     part = part_doc.part
-    sketch = _get_sketch(part, sketch_name)
+    profile = _get_sketch(part, sketch_name)
+    center = _get_sketch(part, center_curve_name)
+    if profile.name == center.name:
+        raise RuntimeError("Slot requires distinct profile and center-curve sketches.")
 
     sf = ShapeFactory(part.shape_factory.com_object)
-    ref = part.create_reference_from_object(sketch)
-    slot = sf.add_new_slot(ref)
+    _ensure_body_in_work(part)
+    slot = sf.add_new_slot(profile, center)
     part.update()
-    return {"feature": "Slot", "sketch": sketch.name}
+    return {"feature": "Slot", "profile": profile.name, "center_curve": center.name}
 
 
 def add_body(body_name: str = "NewBody") -> dict[str, Any]:
@@ -350,6 +457,7 @@ def insert_in_body(source_body_name: str, target_body_name: str = "PartBody") ->
         target.insert_in_body(source)
     except Exception:
         sf = ShapeFactory(part.shape_factory.com_object)
+        _ensure_body_in_work(part)
         sf.add_new_add(target)
 
     part.update()

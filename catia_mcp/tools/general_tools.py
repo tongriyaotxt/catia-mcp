@@ -46,7 +46,7 @@ def search_elements(
         try:
             item = sel.Item2(i)
             results.append({
-                "name": getattr(item, "Name", "Unknown"),
+                "name": getattr(item.Value, "Name", "Unknown"),
                 "type": getattr(item, "Type", "Unknown"),
             })
         except Exception:
@@ -112,7 +112,8 @@ def set_graphic_properties(
 
     if show is not None:
         try:
-            vp.SetShow(int(show))
+            # CatVisPropertyShow: 0 = show, 1 = hide
+            vp.SetShow(0 if show else 1)
         except Exception as e:
             logger.warning("Failed to set show: %s", e)
 

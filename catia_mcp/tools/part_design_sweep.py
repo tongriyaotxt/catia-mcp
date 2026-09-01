@@ -5,9 +5,11 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from pycatia.hybrid_shape_interfaces.hybrid_shape_factory import HybridShapeFactory
 from pycatia.part_interfaces.shape_factory import ShapeFactory
 
 from catia_mcp.connection import _get_pycatia_part_doc
+from catia_mcp.tools.part_design import _ensure_body_in_work
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +51,7 @@ def create_groove(sketch_name: str | None = None) -> dict[str, Any]:
     sketch = _get_sketch(part, sketch_name)
 
     sf = ShapeFactory(part.shape_factory.com_object)
+    _ensure_body_in_work(part)
     groove = sf.add_new_groove(sketch)
     part.update()
     return {"feature": "Groove", "sketch": sketch.name}
@@ -80,6 +83,7 @@ def create_scaling(
 
     ref = part.create_reference_from_object(feature)
     sf = ShapeFactory(part.shape_factory.com_object)
+    _ensure_body_in_work(part)
     scaling = sf.add_new_scaling(ref, float(factor))
     part.update()
     return {"feature": "Scaling", "name": scaling.name, "factor": factor}
@@ -110,8 +114,8 @@ def create_symmetry(
         raise RuntimeError(f"Feature '{feature_name}' not found.")
 
     plane_map = {
-        "xy": part.origin_elements.plane_yz,
-        "yz": part.origin_elements.plane_xy,
+        "xy": part.origin_elements.plane_xy,
+        "yz": part.origin_elements.plane_yz,
         "zx": part.origin_elements.plane_zx,
     }
     plane = plane_map.get(plane_name.lower())
@@ -119,7 +123,9 @@ def create_symmetry(
         raise ValueError(f"Unknown plane: {plane_name}")
 
     ref = part.create_reference_from_object(plane)
-    ref_feature = part.create_reference_from_object(feature)
+
+    # Symmetry acts on the current in-work object — make it the requested feature
+    part.in_work_object = feature
 
     sf = ShapeFactory(part.shape_factory.com_object)
     sym = sf.add_new_symmetry_2(ref)
@@ -143,6 +149,7 @@ def create_affinity(
     part = part_doc.part
 
     sf = ShapeFactory(part.shape_factory.com_object)
+    _ensure_body_in_work(part)
     affinity = sf.add_new_affinity2(float(x_ratio), float(y_ratio), float(z_ratio))
     part.update()
     return {"feature": "Affinity", "x_ratio": x_ratio, "y_ratio": y_ratio, "z_ratio": z_ratio}
@@ -154,6 +161,7 @@ def create_blend() -> dict[str, Any]:
     part = part_doc.part
 
     sf = ShapeFactory(part.shape_factory.com_object)
+    _ensure_body_in_work(part)
     blend = sf.add_new_blend()
     part.update()
     return {"feature": "Blend", "name": blend.name, "note": "Requires further profile configuration in CATIA."}
@@ -189,6 +197,7 @@ def create_axis_to_axis(
     ref_target = part.create_reference_from_object(target)
 
     sf = ShapeFactory(part.shape_factory.com_object)
+    _ensure_body_in_work(part)
     axis2axis = sf.add_new_axis_to_axis2(ref_source, ref_target)
     part.update()
     return {"feature": "AxisToAxis", "source": source_feature_name, "target": target_feature_name}
@@ -224,20 +233,25 @@ def create_circ_pattern(
 
     ref = part.create_reference_from_object(feature)
     sf = ShapeFactory(part.shape_factory.com_object)
+    _ensure_body_in_work(part)
 
-    # Use Z axis as rotation axis
+    # Use the XY origin plane as rotation center and axis
+    ref_center = part.create_reference_from_object(part.origin_elements.plane_xy)
     ref_axis = part.create_reference_from_object(part.origin_elements.plane_xy)
 
     pattern = sf.add_new_circ_pattern(
         ref,
-        int(instances),
-        float(angular_spacing),
-        float(total_angle),
-        1,  # radial direction
-        1,  # instance alignment
+        1,                       # copies in radial direction
+        int(instances),          # copies in angular direction
+        0.0,                     # step in radial direction
+        float(angular_spacing),  # step in angular direction (degrees)
+        1,                       # position along radial direction
+        1,                       # position along angular direction
+        ref_center,
         ref_axis,
-        False,
-        0.0,
+        False,                   # reversed rotation axis
+        0.0,                     # rotation angle
+        False,                   # radius aligned
     )
     part.update()
     return {
@@ -318,19 +332,42 @@ def create_helix(
     body = _get_main_body(part)
 
     sketch = body.sketches.item(sketch_name)
-    ref_profile = part.create_reference_from_object(sketch)
+    ref_point = part.create_reference_from_object(sketch)
+
+    # Resolve the helix axis: origin planes or a named hybrid element
+    plane_map = {
+        "plane_xy": part.origin_elements.plane_xy,
+        "plane_yz": part.origin_elements.plane_yz,
+        "plane_zx": part.origin_elements.plane_zx,
+    }
+    axis_obj = plane_map.get(axis_name.lower())
+    if axis_obj is None:
+        for hb_item in part.hybrid_bodies:
+            for hs in hb_item.hybrid_shapes:
+                if hs.name == axis_name:
+                    axis_obj = hs
+                    break
+            if axis_obj is not None:
+                break
+    if axis_obj is None:
+        raise RuntimeError(f"Axis '{axis_name}' not found.")
+    ref_axis = part.create_reference_from_object(axis_obj)
 
     # Use HybridShapeFactory for helix
-    hsf_com = part.hybrid_shape_factory.com_object
+    gsf = HybridShapeFactory(part.hybrid_shape_factory.com_object)
     try:
-        helix = hsf_com.AddNewHelix(
-            ref_profile.com_object,
+        helix = gsf.add_new_helix(
+            ref_axis,
+            False,  # invert axis
+            ref_point,
             float(pitch),
             float(height),
-            int(starting_angle),
-            True,
+            False,  # clockwise revolution
+            float(starting_angle),
+            0.0,    # taper angle
+            False,  # taper outward
         )
-        helix.Name = name
+        helix.name = name
     except Exception as e:
         raise RuntimeError(
             f"Helix creation failed (likely a COM type-conversion issue in this CATIA locale): {e}"
@@ -342,7 +379,7 @@ def create_helix(
         hb.name = "GeometricalSet.1"
     else:
         hb = hybrid_bodies.item(1)
-    hb.com_object.AppendHybridShape(helix)
+    hb.append_hybrid_shape(helix)
 
     part.update()
-    return {"feature": "Helix", "name": helix.Name, "pitch": pitch, "height": height}
+    return {"feature": "Helix", "name": helix.name, "pitch": pitch, "height": height}

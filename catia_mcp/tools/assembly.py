@@ -39,12 +39,20 @@ def create_product(product_name: str = "NewProduct") -> dict[str, Any]:
 
 
 def add_component(component_path: str, position: list[float] | None = None) -> dict[str, Any]:
-    """Add a new component (new part) to the active product."""
+    """Add a new component (new part) to the active product.
+
+    Args:
+        component_path: Desired save path for the new CATPart. The file name
+            (without extension) is used as the component PartNumber, and the
+            new part document is saved to this path.
+        position: Optional [x, y, z] insertion position.
+    """
     prod_doc = _get_pycatia_product_doc()
     product = prod_doc.product
     products = product.products
 
-    new_product = products.add_new_component("Part", component_path)
+    part_number = os.path.splitext(os.path.basename(component_path))[0]
+    new_product = products.add_new_component("Part", part_number)
     if position and len(position) >= 3:
         move = new_product.move
         # 12-element affine: [r11,r12,r13,r21,r22,r23,r31,r32,r33,tx,ty,tz]
@@ -52,7 +60,19 @@ def add_component(component_path: str, position: list[float] | None = None) -> d
         move.apply(matrix)
 
     product.update()
-    return _product_info(new_product)
+
+    # Save the new component's part document to the requested path
+    try:
+        comp_doc = new_product.com_object.ReferenceProduct.Parent
+        comp_doc.SaveAs(component_path)
+    except Exception as e:
+        raise RuntimeError(
+            f"Component created but failed to save to '{component_path}': {e}"
+        ) from e
+
+    info = _product_info(new_product)
+    info["saved_to"] = component_path
+    return info
 
 
 def add_existing_component(file_path: str, position: list[float] | None = None) -> dict[str, Any]:

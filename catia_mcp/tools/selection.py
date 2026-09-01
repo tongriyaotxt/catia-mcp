@@ -66,7 +66,7 @@ def select_element_by_name(element_name: str, append: bool = False) -> dict[str,
     if element is None:
         raise RuntimeError(f"Element '{element_name}' not found in active document.")
 
-    sel.selection.Add(element.com_object)
+    sel.Add(element.com_object)
     return {"selected": element_name, "count": sel.count}
 
 
@@ -105,7 +105,7 @@ def select_face_by_index(
         faces = feature.com_object.Faces
         if faces.Count >= face_index:
             face = faces.Item(face_index)
-            sel.selection.Add(face)
+            sel.Add(face)
             return {"selected": f"{feature_name}.Face.{face_index}", "count": sel.count}
     except Exception:
         pass
@@ -149,7 +149,7 @@ def select_edge_by_index(
         edges = feature.com_object.Edges
         if edges.Count >= edge_index:
             edge = edges.Item(edge_index)
-            sel.selection.Add(edge)
+            sel.Add(edge)
             return {"selected": f"{feature_name}.Edge.{edge_index}", "count": sel.count}
     except Exception:
         pass

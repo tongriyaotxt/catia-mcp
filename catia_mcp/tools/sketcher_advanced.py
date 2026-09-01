@@ -132,7 +132,7 @@ def add_construction_line(
     # Try to set the last created line as construction
     geos = sketch.geometric_elements
     try:
-        last_geo = geos[geos.count]
+        last_geo = geos[geos.count - 1]
         if hasattr(last_geo, "construction"):
             last_geo.construction = True
         else:

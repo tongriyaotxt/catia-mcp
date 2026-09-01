@@ -28,6 +28,14 @@ class CatiaConnection:
     @property
     def catia(self) -> Any:
         """Return the CATIA Application COM object, reconnecting if necessary."""
+        if self._catia is not None:
+            # Liveness probe: if the CATIA process was closed, the held COM
+            # reference is a zombie and any access raises — reconnect.
+            try:
+                _ = self._catia.Name
+            except Exception:
+                logger.info("Lost CATIA COM reference; reconnecting.")
+                self._catia = None
         if self._catia is None:
             self._connect()
         return self._catia

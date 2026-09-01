@@ -267,10 +267,11 @@ def create_gsd_fill(
     ref = _find_ref(part, boundary_name)
     gsf = HybridShapeFactory(part.hybrid_shape_factory.com_object)
     fill = gsf.add_new_fill()
+    fill.add_bound(ref)
     fill.name = name
     hb.append_hybrid_shape(fill)
     part.update()
-    return {"feature": "GSD_Fill", "name": fill.name, "note": "May require boundary association post-creation."}
+    return {"feature": "GSD_Fill", "name": fill.name}
 
 
 def create_gsd_sweep(
@@ -374,7 +375,7 @@ def create_gsd_trim(
     ref2 = _find_ref(part, element2_name)
 
     gsf = HybridShapeFactory(part.hybrid_shape_factory.com_object)
-    trim = gsf.add_new_hybrid_split(ref1, ref2, int(keep_side))
+    trim = gsf.add_new_hybrid_trim(ref1, int(keep_side), ref2, int(keep_side))
     trim.name = name
     hb.append_hybrid_shape(trim)
     part.update()
@@ -403,7 +404,13 @@ def create_gsd_blend(
     ref2 = _find_ref(part, curve2_name)
 
     gsf = HybridShapeFactory(part.hybrid_shape_factory.com_object)
-    blend = gsf.add_new_blend(ref1, ref2)
+    blend = gsf.add_new_blend()
+    blend.set_curve(0, ref1)
+    blend.set_curve(1, ref2)
+    continuity_map = {"point": 0, "tangent": 1, "curvature": 2}
+    cont_code = continuity_map.get(continuity.lower(), 1)
+    blend.set_continuity(0, cont_code)
+    blend.set_continuity(1, cont_code)
     blend.name = name
     hb.append_hybrid_shape(blend)
     part.update()
@@ -427,7 +434,7 @@ def create_gsd_boundary(
     ref = _find_ref(part, surface_name)
 
     gsf = HybridShapeFactory(part.hybrid_shape_factory.com_object)
-    boundary = gsf.add_new_boundary(ref, True, 0.0)
+    boundary = gsf.add_new_boundary_of_surface(ref)
     boundary.name = name
     hb.append_hybrid_shape(boundary)
     part.update()

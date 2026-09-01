@@ -10,6 +10,19 @@ from catia_mcp.connection import _get_doc_type, get_catia, get_active_document
 logger = logging.getLogger(__name__)
 
 
+# CatPaperSize values (pycatia cat_paper_size enum): index in tuple
+# (Letter=0, Legal=1, A0=2, A1=3, A2=4, A3=5, A4=6)
+_PAPER_SIZE_MAP = {
+    "letter": 0,
+    "legal": 1,
+    "a0": 2,
+    "a1": 3,
+    "a2": 4,
+    "a3": 5,
+    "a4": 6,
+}
+
+
 # ---------------------------------------------------------------------------
 # Tools
 # ---------------------------------------------------------------------------
@@ -19,15 +32,22 @@ def create_drawing(drawing_name: str = "NewDrawing", standard: str = "ISO", shee
 
     Args:
         drawing_name: Name for the drawing.
-        standard: Drawing standard (ISO / ANSI / etc.).
+        standard: Drawing standard (ISO / ANSI / etc.). Note: CATIA COM
+            automation cannot switch the drawing standard after creation;
+            the standard of the default drawing template is used.
         sheet_format: Sheet format (A0ISO, A1ISO, A2ISO, A3ISO, A4ISO, etc.).
     """
     catia = get_catia()
     doc = catia.Documents.Add("Drawing")
     sheets = doc.Sheets
     sheet = sheets.ActiveSheet
-    sheet.PaperSize = 4  # A4 default; real mapping depends on CATIA enums
-    # Rename is optional
+
+    key = sheet_format.lower().replace("iso", "").replace("ansi", "")
+    paper_size = _PAPER_SIZE_MAP.get(key)
+    if paper_size is None:
+        raise ValueError(f"Unknown sheet format: {sheet_format}")
+    sheet.PaperSize = paper_size
+
     return {
         "drawing": drawing_name,
         "standard": standard,
@@ -97,15 +117,13 @@ def add_dimension(element_name: str, x: float, y: float) -> dict[str, Any]:
     if _get_doc_type(doc) != "Drawing":
         raise RuntimeError("Active document is not a Drawing.")
 
-    sheets = doc.Sheets
-    sheet = sheets.ActiveSheet
-    view = sheet.Views.ActiveView
-    # In a real implementation you need the reference to the 2D geometry in the view
-    # This is simplified
     return {
-        "status": "dimension_added",
+        "status": "not_implemented",
         "element": element_name,
         "position": [x, y],
+        "note": "Dimension creation requires references to the generated 2D "
+                "geometry inside a Drawing view, which is not implemented yet. "
+                "No dimension was created.",
     }
 
 

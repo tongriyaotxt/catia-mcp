@@ -19,14 +19,14 @@ def set_view_mode(mode: str = "shading") -> dict[str, Any]:
     catia = get_catia()
     viewer = catia.ActiveWindow.ActiveViewer
     view_mode_map = {
-        "shading": 1,
-        "wireframe": 0,
-        "shading_with_edges": 2,
+        "shading": 0,
+        "shading_with_edges": 1,
+        "wireframe": 2,
         "hidden_remove": 3,
     }
-    code = view_mode_map.get(mode.lower(), 1)
+    code = view_mode_map.get(mode.lower(), 0)
     try:
-        viewer.ViewMode = code
+        viewer.RenderingMode = code
     except Exception as e:
         raise RuntimeError(f"Failed to set view mode '{mode}': {e}") from e
     return {"view_mode": mode, "code": code}
@@ -54,14 +54,19 @@ def hide_show(element_name: str, hide: bool = True) -> dict[str, Any]:
     if element is None:
         raise RuntimeError(f"Element '{element_name}' not found.")
 
+    # Visibility is controlled via Selection.VisProperties.SetShow (0=show, 1=hide)
+    catia = get_catia()
+    sel = catia.ActiveDocument.Selection
     try:
-        if hide:
-            element.com_object.Hide = True
-        else:
-            element.com_object.Hide = False
+        sel.Clear()
+        sel.Add(element.com_object)
+        sel.VisProperties.SetShow(1 if hide else 0)
     except Exception as e:
         raise RuntimeError(f"Failed to hide/show '{element_name}': {e}") from e
+    finally:
+        sel.Clear()
 
+    part.update()
     return {"element": element_name, "hidden": hide}
 
 
@@ -88,17 +93,22 @@ def isolate(element_name: str) -> dict[str, Any]:
     if target is None:
         raise RuntimeError(f"Element '{element_name}' not found.")
 
-    for shape in target_body.shapes:
-        if shape.name != element_name:
-            try:
-                shape.com_object.Hide = True
-            except Exception:
-                pass
+    # Visibility is controlled via Selection.VisProperties.SetShow (0=show, 1=hide)
+    catia = get_catia()
+    sel = catia.ActiveDocument.Selection
     try:
-        target.com_object.Hide = False
-    except Exception:
-        pass
+        for shape in target_body.shapes:
+            if shape.name != element_name:
+                sel.Clear()
+                sel.Add(shape.com_object)
+                sel.VisProperties.SetShow(1)
+        sel.Clear()
+        sel.Add(target.com_object)
+        sel.VisProperties.SetShow(0)
+    finally:
+        sel.Clear()
 
+    part.update()
     return {"isolated": element_name}
 
 

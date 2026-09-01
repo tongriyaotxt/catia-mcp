@@ -272,14 +272,17 @@ def create_pad(length: float, sketch_name: str | None = None, reverse: bool = Fa
 
 
 @mcp.tool()
-def create_pocket(length: float, sketch_name: str | None = None) -> dict[str, Any]:
+def create_pocket(length: float, sketch_name: str | None = None, reverse: bool = False) -> dict[str, Any]:
     """Create a Pocket (cut extrusion) from a sketch profile.
 
     Args:
         length: Cut depth in mm.
         sketch_name: Name of the sketch to use (last sketch if None).
+        reverse: Cut in the opposite direction (default cuts opposite the
+            sketch plane normal, i.e. into the material for sketches on an
+            outer face).
     """
-    return part_design.create_pocket(length, sketch_name)
+    return part_design.create_pocket(length, sketch_name, reverse)
 
 
 @mcp.tool()
@@ -303,17 +306,21 @@ def create_hole(
     direction_x: float = 0.0,
     direction_y: float = 0.0,
     direction_z: float = 1.0,
+    face_name: str | None = None,
 ) -> dict[str, Any]:
     """Create a Hole feature on the main body.
 
     Args:
         diameter: Hole diameter in mm.
         depth: Hole depth in mm.
-        point_x/y/z: Anchor point coordinates.
-        direction_x/y/z: Hole axis direction vector.
+        point_x/y/z: Anchor point coordinates (must lie on a planar face).
+        direction_x/y/z: Hole axis direction vector (informational; the actual
+            direction follows the support face normal).
+        face_name: Optional explicit support face reference name.
     """
     return part_design.create_hole(
-        diameter, depth, point_x, point_y, point_z, direction_x, direction_y, direction_z
+        diameter, depth, point_x, point_y, point_z, direction_x, direction_y, direction_z,
+        face_name=face_name,
     )
 
 
@@ -382,25 +389,29 @@ def create_pattern(
 
 
 @mcp.tool()
-def create_rib(length: float, sketch_name: str | None = None) -> dict[str, Any]:
-    """Create a Rib (sweep) from a profile sketch.
+def create_rib(
+    sketch_name: str | None = None, center_curve_name: str | None = None
+) -> dict[str, Any]:
+    """Create a Rib (sweep) from a profile sketch along a center curve.
 
     Args:
-        length: Rib length in mm.
-        sketch_name: Center-curve sketch name.
+        sketch_name: Profile sketch name (last sketch if None).
+        center_curve_name: Center-curve sketch name (must differ from profile).
     """
-    return part_design.create_rib(length, sketch_name)
+    return part_design.create_rib(sketch_name, center_curve_name)
 
 
 @mcp.tool()
-def create_slot(length: float, sketch_name: str | None = None) -> dict[str, Any]:
-    """Create a Slot (groove sweep) from a profile sketch.
+def create_slot(
+    sketch_name: str | None = None, center_curve_name: str | None = None
+) -> dict[str, Any]:
+    """Create a Slot (groove sweep) from a profile sketch along a center curve.
 
     Args:
-        length: Slot length in mm.
-        sketch_name: Center-curve sketch name.
+        sketch_name: Profile sketch name (last sketch if None).
+        center_curve_name: Center-curve sketch name (must differ from profile).
     """
-    return part_design.create_slot(length, sketch_name)
+    return part_design.create_slot(sketch_name, center_curve_name)
 
 
 @mcp.tool()
@@ -442,7 +453,9 @@ def add_component(component_path: str, position: list[float] | None = None) -> d
     """Add a new component (new part) to the active product.
 
     Args:
-        component_path: Desired save path for the new CATPart.
+        component_path: Desired save path for the new CATPart. The file name
+            (without extension) is used as the component PartNumber, and the
+            new part document is saved to this path.
         position: Optional [x, y, z] insertion position.
     """
     return assembly.add_component(component_path, position)
@@ -939,6 +952,17 @@ def delete_feature(feature_name: str) -> dict[str, Any]:
 def get_feature_tree() -> list[dict[str, Any]]:
     """Return the hierarchical feature tree of the active part."""
     return feature_edit.get_feature_tree()
+
+
+@mcp.tool()
+def reorder_feature(feature_name: str, new_index: int) -> dict[str, Any]:
+    """Move a feature to a new position in the feature tree.
+
+    Args:
+        feature_name: Feature to move.
+        new_index: 1-based target index within the body.
+    """
+    return feature_edit.reorder_feature(feature_name, new_index)
 
 
 @mcp.tool()
@@ -1785,7 +1809,7 @@ def create_gsd_extrapolate(
         continuity: "point", "tangent", or "curvature".
         name: Feature name.
     """
-    return gsd_advanced.create_gsd_extrapolate(surface_name, length, continuity, name)
+    return gsd_advanced.create_gsd_extrapolate(surface_name, length, continuity=continuity, name=name)
 
 
 @mcp.tool()

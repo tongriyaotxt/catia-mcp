@@ -162,11 +162,18 @@ def add_diameter_constraint(
     sketch.open_edition()
     try:
         ref = _get_geo_ref(part, sketch, element)
+        # CATIA has no diameter constraint type; emulate it with a radius
+        # constraint set to half the requested diameter.
         cst = constraints.add_mono_elt_cst(CatConstraintType.catCstTypeRadius, ref)
-        cst.dimension.value = float(value)
+        cst.dimension.value = float(value) / 2.0
     finally:
         sketch.close_edition()
-    return {"constraint": "Diameter", "value": value}
+    return {
+        "constraint": "Diameter",
+        "value": value,
+        "note": "CATIA only supports radius constraints; a radius constraint "
+                "of value/2 was created to represent this diameter.",
+    }
 
 
 # ---------------------------------------------------------------------------

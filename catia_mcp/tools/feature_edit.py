@@ -58,9 +58,10 @@ def edit_feature_parameter(
     for attr_path in candidates:
         try:
             obj = shape
-            for attr in attr_path.split("."):
+            attrs = attr_path.split(".")
+            for attr in attrs[:-1]:
                 obj = getattr(obj, attr)
-            obj = float(value)
+            setattr(obj, attrs[-1], float(value))
             part.update()
             return {
                 "feature": feature_name,
@@ -80,13 +81,18 @@ def delete_feature(feature_name: str) -> dict[str, Any]:
     """Delete a feature from the part."""
     part_doc = _get_pycatia_part_doc()
     part = part_doc.part
-    shape, body = _find_shape(part, feature_name)
+    shape, _ = _find_shape(part, feature_name)
 
-    shapes = body.shapes
-    for i in range(1, shapes.count + 1):
-        if shapes.item(i).name == feature_name:
-            shapes.remove(i)
-            break
+    try:
+        # Datum features (planes, points, lines) are deleted via the factory
+        ref = part.create_reference_from_object(shape)
+        part.hybrid_shape_factory.delete_object_for_datum(ref)
+    except Exception:
+        # Solid shapes are deleted through the Selection
+        sel = part_doc.selection
+        sel.clear()
+        sel.add(shape)
+        sel.delete()
 
     part.update()
     return {"deleted": feature_name}

@@ -251,7 +251,7 @@ def design_robot_arm():
     axes = axis_systems.list_axis_systems()
     print(f"\nAxis systems: {len(axes)}")
     for a in axes:
-        print(f"  {a['name']} @ {a['origin']}")
+        print(f"  {a['name']} @ {a.get('origin', 'n/a')}")
 
     export.export_to_stl(r"D:\mcp-selfmade\robot_arm_demo.stl")
     print("\nSTL exported to robot_arm_demo.stl")

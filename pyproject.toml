@@ -7,8 +7,9 @@ requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [{name = "田晓潼", email = "dev@example.com"}]
 dependencies = [
-    "mcp>=1.27.0",
+    "mcp>=1.27.0,<2",
     "pywin32>=306",
+    "pycatia>=0.8.2",
 ]
 
 [project.optional-dependencies]
@@ -24,3 +25,6 @@ catia-mcp = "catia_mcp.__main__:main"
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM"]
 ignore = ["E501"]
+
+[tool.setuptools]
+packages = ["catia_mcp", "catia_mcp.tools"]

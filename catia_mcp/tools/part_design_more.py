@@ -8,6 +8,7 @@ from typing import Any
 from pycatia.part_interfaces.shape_factory import ShapeFactory
 
 from catia_mcp.connection import _get_pycatia_part_doc
+from catia_mcp.tools.part_design import _ensure_body_in_work
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,7 @@ def create_stiffener(
     sketch = _get_sketch(part, sketch_name)
 
     sf = ShapeFactory(part.shape_factory.com_object)
+    _ensure_body_in_work(part)
     ref = part.create_reference_from_object(sketch)
     stiffener = sf.add_new_stiffener_from_ref(ref)
     try:
@@ -104,11 +106,10 @@ def create_stiffener(
     except Exception as exc:
         # Remove the failed feature to keep the document healthy
         try:
-            body = _get_main_body(part)
-            for shape in body.shapes:
-                if shape.com_object == stiffener.com_object:
-                    body.shapes.remove(shape.name)
-                    break
+            sel = part_doc.selection
+            sel.clear()
+            sel.add(stiffener)
+            sel.delete()
         except Exception:
             pass
         raise RuntimeError(
@@ -138,6 +139,7 @@ def create_face_fillet(
     ref2 = _try_get_face_ref(part, feature_name, face2_index)
 
     sf = ShapeFactory(part.shape_factory.com_object)
+    _ensure_body_in_work(part)
     fillet = sf.add_new_face_fillet(ref1, ref2, float(radius))
     part.update()
     return {"feature": "FaceFillet", "radius": radius, "name": getattr(fillet, "name", "FaceFillet")}
@@ -164,6 +166,7 @@ def create_tritangent_fillet(
     ref2 = _try_get_face_ref(part, feature_name, face2_index)
 
     sf = ShapeFactory(part.shape_factory.com_object)
-    fillet = sf.add_new_tritangent_fillet(ref_remove, ref1, ref2)
+    _ensure_body_in_work(part)
+    fillet = sf.add_new_tritangent_fillet(ref1, ref2, ref_remove)
     part.update()
     return {"feature": "TritangentFillet", "name": getattr(fillet, "name", "TritangentFillet")}

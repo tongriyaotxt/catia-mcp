@@ -46,7 +46,8 @@ def list_parameters() -> list[dict[str, Any]]:
         result.append({
             "name": p.name,
             "value": val,
-            "type": getattr(p, "value_type", "Unknown"),
+            # pycatia returns typed Parameter subclasses (Length, BoolParam, ...)
+            "type": type(p).__name__,
         })
     return result
 
@@ -59,7 +60,7 @@ def get_parameter_value(name: str) -> dict[str, Any]:
     return {
         "name": param.name,
         "value": param.value,
-        "type": getattr(param, "value_type", "Unknown"),
+        "type": type(param).__name__,
     }
 
 

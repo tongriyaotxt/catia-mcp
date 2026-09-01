@@ -6,7 +6,7 @@ import logging
 import os
 from typing import Any
 
-from catia_mcp.connection import get_catia, get_active_document
+from catia_mcp.connection import get_catia, get_active_document, _get_doc_type
 
 logger = logging.getLogger(__name__)
 
@@ -24,10 +24,8 @@ def _doc_info(doc: Any) -> dict[str, Any]:
         name = doc.Name
     except Exception:
         name = "Unknown"
-    try:
-        doc_type = doc.Type
-    except Exception:
-        doc_type = "Unknown"
+    # doc.Type raises for never-saved documents; use extension fallback
+    doc_type = _get_doc_type(doc)
     try:
         saved = doc.Saved
     except Exception:
